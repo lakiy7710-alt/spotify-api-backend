@@ -1,11 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import yt_dlp
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
 app = FastAPI()
 
-# CORS for Android App connection
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,50 +16,59 @@ app.add_middleware(
 def home():
     return {"status": "Spotify Backend is Running!"}
 
-# NEW: Search logic jo tumhare App ko chahiye
 @app.get("/search")
-def search_songs(q: str):
+def search_songs(q: str = Query(...)):
     try:
         ydl_opts = {
-            'quiet': True, 
-            'noplaylist': True,
-            'extract_flat': True, # Fast search ke liye
+            "quiet": True,
+            "noplaylist": True,
+            "skip_download": True,
+            "format": "bestaudio/best",
         }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # YouTube se top 10 results nikalega
-            results = ydl.extract_info(f"ytsearch10:{q}", download=False)['entries']
-            
+            data = ydl.extract_info(f"ytsearch10:{q}", download=False)
+            results = data.get("entries", [])
+
             output = []
             for entry in results:
+                video_id = entry.get("id")
+                if not video_id:
+                    continue
+
                 output.append({
-                    "id": entry.get('id'),
-                    "title": entry.get('title'),
-                    "artist": entry.get('uploader', 'Unknown Artist'),
-                    "imageUrl": entry.get('thumbnail', ''),
-                    "spotifyUrl": f"https://youtube.com{entry.get('id')}",
-                    "durationMs": int(entry.get('duration', 0)) * 1000
+                    "id": video_id,
+                    "title": entry.get("title") or "Unknown Title",
+                    "artist": entry.get("uploader") or entry.get("channel") or "Unknown Artist",
+                    "imageUrl": entry.get("thumbnail") or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    "spotifyUrl": f"https://www.youtube.com/watch?v={video_id}",
+                    "durationMs": int(entry.get("duration") or 0) * 1000
                 })
+
             return output
+
     except Exception as e:
         return {"error": str(e)}
 
-# Existing Stream logic
 @app.get("/get_stream")
 def get_stream(spotify_url: str):
     try:
         ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'noplaylist': True,
+            "format": "bestaudio/best",
+            "quiet": True,
+            "noplaylist": True,
         }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{spotify_url}", download=False)['entries'][0]
+            info = ydl.extract_info(spotify_url, download=False)
+
             return {
-                "url": info['url'], 
-                "title": info['title'],
-                "thumbnail": info.get('thumbnail', ""),
+                "url": info.get("url"),
+                "title": info.get("title"),
+                "thumbnail": info.get("thumbnail", ""),
                 "status": "success"
             }
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
